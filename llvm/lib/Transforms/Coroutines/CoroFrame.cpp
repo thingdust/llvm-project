@@ -2807,9 +2807,7 @@ void coro::buildCoroutineFrame(Function &F, Shape &Shape) {
   }
 
   LLVM_DEBUG(dumpSpills("Spills", FrameData.Spills));
-  if (Shape.ABI == coro::ABI::Retcon || Shape.ABI == coro::ABI::RetconOnce ||
-      Shape.ABI == coro::ABI::Async)
-    sinkSpillUsesAfterCoroBegin(F, FrameData, Shape.CoroBegin);
+  sinkSpillUsesAfterCoroBegin(F, FrameData, Shape.CoroBegin);
   Shape.FrameTy = buildFrameType(F, Shape, FrameData);
   createFramePtr(Shape);
   // For now, this works for C++ programs only.
