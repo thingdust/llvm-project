@@ -2400,23 +2400,33 @@ static void eliminateSwiftError(Function &F, coro::Shape &Shape) {
 /// after the coro.begin intrinsic.
 static void sinkSpillUsesAfterCoroBegin(Function &F,
                                         const FrameDataInfo &FrameData,
-                                        CoroBeginInst *CoroBegin) {
+                                        coro::Shape &Shape) {
   DominatorTree Dom(F);
 
   SmallSetVector<Instruction *, 32> ToMove;
   SmallVector<Instruction *, 32> Worklist;
 
+  CoroBeginInst *CoroBegin = Shape.CoroBegin;
+  SmallVector<Value *, 8> AllDefs = FrameData.getAllDefs();
+
+  if (Shape.ABI == coro::ABI::Switch) {
+    AllDefs.push_back(Shape.getPromiseAlloca());
+  }
+
   // Collect all users that precede coro.begin.
-  for (auto *Def : FrameData.getAllDefs()) {
+  for (auto *Def : AllDefs) {
     for (User *U : Def->users()) {
       auto Inst = cast<Instruction>(U);
-      if (Inst->getParent() != CoroBegin->getParent() ||
+
+      if (Inst->getParent() != &F.getEntryBlock() ||
           Dom.dominates(CoroBegin, Inst))
         continue;
+
       if (ToMove.insert(Inst))
         Worklist.push_back(Inst);
     }
-  }
+  } 
+
   // Recursively collect users before coro.begin.
   while (!Worklist.empty()) {
     auto *Def = Worklist.pop_back_val();
@@ -2805,11 +2815,9 @@ void coro::buildCoroutineFrame(Function &F, Shape &Shape) {
       if (Checker.isDefinitionAcrossSuspend(*V, DVI))
         FrameData.Spills[V].push_back(DVI);
   }
-
+  
   LLVM_DEBUG(dumpSpills("Spills", FrameData.Spills));
-  if (Shape.ABI == coro::ABI::Retcon || Shape.ABI == coro::ABI::RetconOnce ||
-      Shape.ABI == coro::ABI::Async)
-    sinkSpillUsesAfterCoroBegin(F, FrameData, Shape.CoroBegin);
+  sinkSpillUsesAfterCoroBegin(F, FrameData, Shape);
   Shape.FrameTy = buildFrameType(F, Shape, FrameData);
   createFramePtr(Shape);
   // For now, this works for C++ programs only.
