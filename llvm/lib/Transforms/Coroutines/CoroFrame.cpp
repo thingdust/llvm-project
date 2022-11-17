@@ -1817,6 +1817,23 @@ static void insertSpills(const FrameDataInfo &FrameData, coro::Shape &Shape) {
           AliasPtrTyped, [&](Use &U) { return DT.dominates(CB, U); });
     }
   }
+
+  if (Shape.ABI == coro::ABI::Switch && Shape.SwitchLowering.PromiseAlloca) {
+    AllocaInst *PA = Shape.SwitchLowering.PromiseAlloca;
+    bool HasAccessingPromiseBeforeCB = llvm::any_of(PA->users(), [&](User *U){
+      auto *Inst = cast<Instruction>(U);
+
+      return !Inst->isDebugOrPseudoInst() &&
+             !Inst->isLifetimeStartOrEnd() &&
+             !DT.dominates(CB, Inst);
+    });
+    if (HasAccessingPromiseBeforeCB) {
+      Builder.SetInsertPoint(Shape.getInsertPtAfterFramePtr());
+      auto *G = GetFramePointer(PA);
+      auto *Value = Builder.CreateLoad(PA->getAllocatedType(), PA);
+      Builder.CreateStore(Value, G);
+    }
+  }
 }
 
 // Moves the values in the PHIs in SuccBB that correspong to PredBB into a new
